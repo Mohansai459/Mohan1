@@ -1,0 +1,132 @@
+#include <LiquidCrystal.h>
+#include <SD.h>
+#include <SPI.h>
+#include <RTClib.h>
+
+#define POT_PIN A0         
+#define KEY_PIN 2           
+#define MODE_PIN 3          
+#define SIDE_STAND_PIN 4    
+#define INDICATOR_L_PIN 5   
+#define INDICATOR_R_PIN 6   
+#define BUZZER_PIN 7      
+#define SD_CS_PIN 10       
+#define LOG_INTERVAL 5000  
+
+LiquidCrystal lcd(8, 9, 4, 5, 6, 7);
+
+RTC_DS1307 rtc;
+
+int batteryLevel = 0;
+String keyStatus = "OFF";
+String sideStandStatus = "UP";
+String driveMode = "Normal";
+int speed = 0;
+unsigned long lastLogTime = 0;
+
+File dataFile;
+
+void setup() {
+  Serial.begin(9600);
+  
+  lcd.begin(16, 2);
+  lcd.print("Vehicle Cluster");
+
+  pinMode(KEY_PIN, INPUT);
+  pinMode(MODE_PIN, INPUT);
+  pinMode(SIDE_STAND_PIN, INPUT);
+  pinMode(INDICATOR_L_PIN, OUTPUT);
+  pinMode(INDICATOR_R_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(SD_CS_PIN, OUTPUT);
+  
+  if (!SD.begin(SD_CS_PIN)) {
+    Serial.println("SD Card initialization failed!");
+    return;
+  }
+  
+  
+  if (!rtc.begin()) {
+    Serial.println("RTC initialization failed!");
+    return;
+  }
+  
+  if (!rtc.isrunning()) {
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  }
+
+  
+  lcd.clear();
+}
+
+void loop() {
+  
+  batteryLevel = map(analogRead(POT_PIN), 0, 1023, 0, 100);
+  int key = digitalRead(KEY_PIN);
+  int mode = digitalRead(MODE_PIN);
+  int sideStand = digitalRead(SIDE_STAND_PIN);
+  
+  
+  keyStatus = key ? "ON" : "OFF";
+  driveMode = mode ? "Forward" : "Normal";
+  sideStandStatus = sideStand ? "DOWN" : "UP";
+
+  
+  if (driveMode != "Normal" && sideStandStatus == "DOWN") {
+    digitalWrite(BUZZER_PIN, HIGH);
+  } else {
+    digitalWrite(BUZZER_PIN, LOW);
+  }
+
+  
+  updateLCD();
+
+  
+  if (millis() - lastLogTime > LOG_INTERVAL) {
+    logData();
+    lastLogTime = millis();
+  }
+}
+
+void updateLCD() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Speed: "); lcd.print(speed);
+  lcd.setCursor(0, 1);
+  lcd.print("Battery: "); lcd.print(batteryLevel); lcd.print("%");
+  lcd.setCursor(10, 0);
+  lcd.print("Key: "); lcd.print(keyStatus);
+  lcd.setCursor(10, 1);
+  lcd.print("Drive: "); lcd.print(driveMode);
+}
+
+void logData() {
+  dataFile = SD.open("clusterLog.txt", FILE_WRITE);
+  if (dataFile) {
+    DateTime now = rtc.now();
+    dataFile.print(now.year(), DEC);
+    dataFile.print('/');
+    dataFile.print(now.month(), DEC);
+    dataFile.print('/');
+    dataFile.print(now.day(), DEC);
+    dataFile.print(' ');
+    dataFile.print(now.hour(), DEC);
+    dataFile.print(':');
+    dataFile.print(now.minute(), DEC);
+    dataFile.print(':');
+    dataFile.print(now.second(), DEC);
+    dataFile.print(", Speed: ");
+    dataFile.print(speed);
+    dataFile.print(", Battery: ");
+    dataFile.print(batteryLevel);
+    dataFile.print("%, Key: ");
+    dataFile.print(keyStatus);
+    dataFile.print(", Drive: ");
+    dataFile.print(driveMode);
+    dataFile.print(", Side Stand: ");
+    dataFile.println(sideStandStatus);
+    dataFile.close();
+  } else {
+    Serial.println("Error opening log file");
+  }
+}
